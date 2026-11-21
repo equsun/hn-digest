@@ -21,8 +21,6 @@ python3 hn_digest.py --model qwen2.5:7b --min-comments 30 --limit 20
 python3 hn_digest.py --feeds front,ask      # only some pages (front,new,ask,show)
 ```
 
-The site has four pages: top, new, ask and show, plus an about page. Set `REPO_URL` near the top of the script in `site/index.html` to show your GitHub link.
-
 Each thread is summarized once and cached in `site/data/items/`. It is only
 re-summarized if it grew a lot (30% or +25 comments) and the summary is 6+ hours old.
 The first pass takes a while (about 20-60 s per thread on a laptop GPU, longer on CPU).
