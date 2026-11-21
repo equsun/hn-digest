@@ -1,0 +1,6 @@
+{
+  // The worker name becomes the subdomain: hn.<your-account>.workers.dev
+  "name": "hn",
+  "compatibility_date": "2025-11-01",
+  "assets": { "directory": "./site" }
+}

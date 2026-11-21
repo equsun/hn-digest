@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HN Digest</title>
+<style>
+  :root { --bg:#f6f6ef; --card:#fff; --text:#222; --muted:#828282; --accent:#ff6600; --line:#e3e3d8;
+          --support:#2e7d32; --oppose:#c62828; --mixed:#b26a00; --neutral:#546e7a; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#1b1b1b; --card:#262626; --text:#e6e6e6; --muted:#9a9a9a; --line:#3a3a3a;
+            --support:#66bb6a; --oppose:#ef6c6c; --mixed:#ffb74d; --neutral:#90a4ae; }
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font:16px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; }
+  header { background:var(--accent); padding:10px 14px; }
+  header { display:flex; flex-wrap:wrap; align-items:center; gap:4px 16px; }
+  header > a { color:#000; font-weight:700; text-decoration:none; font-size:18px; }
+  nav a { color:#000; opacity:.75; text-decoration:none; font-size:15px; margin-right:12px; }
+  nav a.on { opacity:1; font-weight:700; text-decoration:underline; }
+  footer { max-width:820px; margin:20px auto 30px; padding:0 12px; color:var(--muted); font-size:12px; }
+  footer a { margin-left:8px; }
+  .prose p { margin:8px 0; }
+  main { max-width:820px; margin:0 auto; padding:12px; }
+  a { color:inherit; }
+  .story { padding:10px 0; border-bottom:1px solid var(--line); display:flex; gap:10px; }
+  .rank { color:var(--muted); min-width:26px; text-align:right; }
+  .title { font-weight:600; text-decoration:none; }
+  .domain { color:var(--muted); font-size:13px; margin-left:6px; }
+  .meta { color:var(--muted); font-size:13px; margin-top:2px; }
+  .meta a { text-decoration:none; }
+  .meta .sum { color:var(--accent); font-weight:600; }
+  .tldr-small { color:var(--muted); font-size:14px; margin-top:4px; }
+  h1 { font-size:20px; line-height:1.3; margin:8px 0 4px; }
+  h2 { font-size:15px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); margin:22px 0 8px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:12px 14px; margin:10px 0; }
+  .card h3 { margin:0 0 4px; font-size:16px; }
+  .badge { display:inline-block; font-size:11px; font-weight:700; text-transform:uppercase; border:1px solid currentColor;
+           border-radius:999px; padding:0 8px; margin-left:8px; vertical-align:middle; }
+  .support { color:var(--support); } .oppose { color:var(--oppose); } .mixed { color:var(--mixed); } .neutral { color:var(--neutral); }
+  ul { margin:6px 0; padding-left:20px; }
+  li { margin:3px 0; }
+  .links { font-size:13px; color:var(--muted); margin-top:6px; }
+  .links a { margin-right:10px; }
+  .back { display:inline-block; margin:6px 0; text-decoration:none; color:var(--muted); }
+  .note { color:var(--muted); font-size:13px; margin-top:24px; }
+  .empty { color:var(--muted); padding:30px 0; text-align:center; }
+</style>
+</head>
+<body>
+<header>
+  <a href="#/">HN Digest</a>
+  <nav id="nav">
+    <a href="#/" data-f="front">top</a>
+    <a href="#/new" data-f="new">new</a>
+    <a href="#/ask" data-f="ask">ask</a>
+    <a href="#/show" data-f="show">show</a>
+    <a href="#/about" data-f="about">about</a>
+  </nav>
+</header>
+<main id="app"><div class="empty">Loading...</div></main>
+<footer>
+  Unofficial, not affiliated with Hacker News or Y Combinator. Summaries are AI-generated and can be wrong; always check the original thread.
+  <a href="#/about">About</a><span id="repo"></span>
+</footer>
+<script>
+const $app = document.getElementById("app");
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[c]));
+const hn = id => "https://news.ycombinator.com/item?id=" + encodeURIComponent(id);
+const ago = ts => {
+  if (!ts) return "";
+  const s = Math.max(0, Date.now() / 1000 - ts);
+  if (s < 3600) return Math.max(1, Math.round(s / 60)) + " min ago";
+  if (s < 86400) return Math.round(s / 3600) + " h ago";
+  return Math.round(s / 86400) + " d ago";
+};
+const domain = u => { try { return new URL(u).hostname.replace(/^www\./, ""); } catch { return ""; } };
+const getJSON = async url => { const r = await fetch(url, { cache: "no-cache" }); if (!r.ok) throw new Error(r.status); return r.json(); };
+const list = (items) => items && items.length ? "<ul>" + items.map(i => "<li>" + esc(i) + "</li>").join("") + "</ul>" : "";
+
+// Set this to your GitHub repo to show a link in the footer and about page.
+const REPO_URL = "https://github.com/equsun/hn-digest";
+if (!REPO_URL.includes("YOUR_GITHUB_USERNAME")) {
+  document.getElementById("repo").innerHTML = ` <a href="${esc(REPO_URL)}" target="_blank" rel="noopener">GitHub</a>`;
+}
+
+const FEED_TITLES = { front: "Top", new: "New", ask: "Ask HN", show: "Show HN" };
+
+function setNav(active) {
+  document.querySelectorAll("#nav a").forEach(a => a.classList.toggle("on", a.dataset.f === active));
+}
+
+function about() {
+  document.title = "About | HN Digest";
+  const repo = REPO_URL.includes("YOUR_GITHUB_USERNAME") ? "" :
+    `<p>Source code: <a href="${esc(REPO_URL)}" target="_blank" rel="noopener">${esc(REPO_URL)}</a></p>`;
+  $app.innerHTML = `<h1>About HN Digest</h1><div class="prose">
+    <p>Long Hacker News threads are hard to follow. HN Digest reads the top comments and writes a short summary of what people argue about: the main positions, where they agree, where they disagree, and any useful facts or corrections.</p>
+    <p>Summaries are generated by a local open-source language model (Llama 3.1 8B via Ollama) and refreshed every 30 minutes or so. Only stories with a sizeable discussion get a summary.</p>
+    <p><b>Please note:</b> AI summaries can miss nuance, misattribute points or be wrong. Treat them as a quick guide and open the original thread to verify anything that matters. Comments belong to their authors; each position links back to the comments it is based on.</p>
+    <p>This is an unofficial project and is not affiliated with, or endorsed by, Hacker News or Y Combinator. Story and comment data comes from the public HN Search (Algolia) API.</p>
+    ${repo}</div>`;
+}
+
+async function feed(name) {
+  document.title = FEED_TITLES[name] + " | HN Digest";
+  let data;
+  try { data = await getJSON("data/feeds/" + name + ".json"); }
+  catch { $app.innerHTML = '<div class="empty">No data yet for this page.</div>'; return; }
+  const rows = data.stories.map((s, i) => `
+    <div class="story">
+      <div class="rank">${i + 1}.</div>
+      <div>
+        <a class="title" href="${s.url ? esc(s.url) : hn(s.id)}" target="_blank" rel="noopener">${esc(s.title)}</a>
+        <span class="domain">${esc(domain(s.url))}</span>
+        <div class="meta">${s.points} points by ${esc(s.author)} ${ago(s.created_at)} |
+          ${s.has_summary ? `<a class="sum" href="#/item/${esc(s.id)}">summary</a> |` : ""}
+          <a href="${hn(s.id)}" target="_blank" rel="noopener">${s.num_comments} comments</a></div>
+        ${s.tldr ? `<div class="tldr-small">${esc(s.tldr)}</div>` : ""}
+      </div>
+    </div>`).join("");
+  $app.innerHTML = rows + `<div class="note">Updated ${ago(data.updated_at)}. Summaries are generated by a local LLM and can be wrong; open the thread to check.</div>`;
+}
+
+async function item(id) {
+  let d;
+  try { d = await getJSON("data/items/" + encodeURIComponent(id) + ".json"); }
+  catch { $app.innerHTML = '<a class="back" href="#/" onclick="if(history.length>1){history.back();return false}">&larr; back</a><div class="empty">No summary for this story.</div>'; return; }
+  const s = d.summary;
+  document.title = d.title + " | HN Digest";
+  const positions = s.positions.map(p => `
+    <div class="card">
+      <h3>${esc(p.title)}<span class="badge ${esc(p.stance)}">${esc(p.stance)}</span></h3>
+      <div>${esc(p.summary)}</div>
+      ${list(p.key_arguments)}
+      ${p.comment_ids.length ? `<div class="links">Read: ${p.comment_ids.map(c => `<a href="${hn(c)}" target="_blank" rel="noopener">comment</a>`).join("")}</div>` : ""}
+    </div>`).join("");
+  const section = (title, items) => items && items.length ? `<h2>${title}</h2><div class="card">${list(items)}</div>` : "";
+  $app.innerHTML = `
+    <a class="back" href="#/" onclick="if(history.length>1){history.back();return false}">&larr; back</a>
+    <h1><a href="${d.url ? esc(d.url) : hn(d.id)}" target="_blank" rel="noopener" style="text-decoration:none">${esc(d.title)}</a></h1>
+    <div class="meta">${d.points} points | <a href="${hn(d.id)}" target="_blank" rel="noopener">${d.num_comments} comments on HN</a></div>
+    <h2>TL;DR</h2><div class="card">${esc(s.tldr)}</div>
+    ${positions ? "<h2>What people think</h2>" + positions : ""}
+    ${section("They agree on", s.agreements)}
+    ${section("They disagree on", s.disagreements)}
+    ${section("Useful points", s.useful_points)}
+    <div class="note">Summarized ${ago(d.summarized_at)} by ${esc(d.model)} from ${d.threads_used} top comment threads. AI-generated, may contain mistakes.</div>`;
+  window.scrollTo(0, 0);
+}
+
+function route() {
+  const h = location.hash;
+  const m = h.match(/^#\/item\/(\d+)/);
+  if (m) { setNav(""); return item(m[1]); }
+  if (h === "#/about") { setNav("about"); return about(); }
+  const f = { "#/new": "new", "#/ask": "ask", "#/show": "show" }[h] || "front";
+  setNav(f);
+  feed(f);
+}
+window.addEventListener("hashchange", route);
+route();
+</script>
+</body>
+</html>
